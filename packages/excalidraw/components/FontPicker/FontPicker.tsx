@@ -30,6 +30,36 @@ export const DEFAULT_FONTS = [
     testId: "font-family-normal",
   },
   {
+    value: FONT_FAMILY.Muyao,
+    icon: FreedrawIcon,
+    text: t("labels.normal"),
+    testId: "font-family-yutong",
+  },
+  {
+    value: FONT_FAMILY.cef,
+    icon: FreedrawIcon,
+    text: t("labels.normal"),
+    testId: "font-family-yutong",
+  },
+  {
+    value: FONT_FAMILY.pingfang,
+    icon: FreedrawIcon,
+    text: t("labels.normal"),
+    testId: "font-family-yutong",
+  },
+  {
+    value: FONT_FAMILY.yuanyuan,
+    icon: FreedrawIcon,
+    text: t("labels.normal"),
+    testId: "font-family-yutong",
+  },
+  {
+    value: FONT_FAMILY.yunfeng,
+    icon: FreedrawIcon,
+    text: t("labels.normal"),
+    testId: "font-family-yutong",
+  },
+  {
     value: FONT_FAMILY["Comic Shanns"],
     icon: FontFamilyCodeIcon,
     text: t("labels.code"),
@@ -41,7 +71,7 @@ const defaultFontFamilies = new Set(DEFAULT_FONTS.map((x) => x.value));
 
 export const isDefaultFont = (fontFamily: number | null) => {
   if (!fontFamily) {
-    return false;
+    return true;
   }
 
   return defaultFontFamilies.has(fontFamily);

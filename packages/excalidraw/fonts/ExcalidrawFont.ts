@@ -181,17 +181,23 @@ export class ExcalidrawFont implements Font {
 
   private static getFormat(url: URL) {
     try {
-      const parts = new URL(url).pathname.split(".");
-
+      const pathname = new URL(url).pathname;
+      const parts = pathname.split(".");
+  
       if (parts.length === 1) {
         return "";
       }
-
-      return `format('${parts.pop()}')`;
+      // ttf is not a valid format, so we are converting it to truetype
+      let type = parts.pop()
+      if (type === 'ttf') {
+        type = 'truetype'
+      }
+      return `format('${type}')`;
     } catch (error) {
       return "";
     }
   }
+
 
   private static normalizeBaseUrl(baseUrl: string) {
     let result = baseUrl;

@@ -33,3 +33,33 @@
   style: normal;
   display: swap;
 }
+
+@font-face {
+  font-family: "Muyao";
+  src: url("Muyao.ttf");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "cef";
+  src: url("cef.ttf");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "pingfang";
+  src: url("pingfang.ttf");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "yuanyuan";
+  src: url("yuanyuan.ttf");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "yunfeng";
+  src: url("yunfeng.ttf");
+  font-display: swap;
+}

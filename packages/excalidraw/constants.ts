@@ -134,6 +134,11 @@ export const FONT_FAMILY = {
   "Lilita One": 7,
   "Comic Shanns": 8,
   "Liberation Sans": 9,
+  cef:15,
+  pingfang:16,
+  yuanyuan:17,
+  yunfeng:18,
+  Muyao: 19,
 };
 
 export const THEME = {

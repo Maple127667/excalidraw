@@ -33,6 +33,14 @@ import NunitoCyrilic from "https://fonts.gstatic.com/s/nunito/v26/XRXI3I6Li01BKo
 import NunitoCyrilicExt from "https://fonts.gstatic.com/s/nunito/v26/XRXI3I6Li01BKofiOc5wtlZ2di8HDIkhdTk3j6zbXWjgevT5.woff2";
 import NunitoVietnamese from "https://fonts.gstatic.com/s/nunito/v26/XRXI3I6Li01BKofiOc5wtlZ2di8HDIkhdTs3j6zbXWjgevT5.woff2";
 
+import Muyao from "./assets/Muyao.ttf";
+import cef from "./assets/cef.ttf";
+import pingfang from "./assets/pingfang.ttf";
+import yuanyuan from "./assets/yuanyuan.ttf";
+import yunfeng from "./assets/yunfeng.ttf";
+
+
+
 export class Fonts {
   // it's ok to track fonts across multiple instances only once, so let's use
   // a static member to reduce memory footprint
@@ -271,6 +279,23 @@ export class Fonts {
         descriptors: { unicodeRange: RANGES.LATIN, weight: "500" },
       },
     );
+    _register("沐瑶随心手写体", FONT_METADATA[FONT_FAMILY.Excalifont], {
+      uri: Muyao,
+    });
+    _register("云峰寒蝉体", FONT_METADATA[FONT_FAMILY.yunfeng], {
+      uri: yunfeng,
+    });
+    
+    _register("CEF Fonts CJK", FONT_METADATA[FONT_FAMILY.cef], {
+      uri: cef,
+    });
+    _register("平方时光体", FONT_METADATA[FONT_FAMILY.pingfang], {
+      uri: pingfang,
+    });
+    _register("缘缘体行书", FONT_METADATA[FONT_FAMILY.yuanyuan], {
+      uri: yuanyuan,
+    });
+    
 
     Fonts._initialized = true;
 
