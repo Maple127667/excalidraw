@@ -8,7 +8,7 @@ import { createHtmlPlugin } from "vite-plugin-html";
 import { woff2BrowserPlugin } from "../scripts/woff2/woff2-vite-plugins";
 
 // To load .env.local variables
-const envVars = loadEnv("", `../`);
+const envVars = loadEnv("", `./`);
 // https://vitejs.dev/config/
 export default defineConfig({
   server: {
