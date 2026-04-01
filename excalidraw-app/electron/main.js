@@ -1,17 +1,32 @@
 const path = require("path");
 
-const { app, BrowserWindow, shell, Menu } = require("electron");
+const fs = require("fs");
+
+const { app, BrowserWindow, shell, Menu, ipcMain } = require("electron");
 
 // 开发环境检测
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 
 let mainWindow;
 
+// 获取用户文档目录下的 Excalidraw 文件夹
+function getFilesDir() {
+  const documentsPath = app.getPath("documents");
+  const excalidrawDir = path.join(documentsPath, "Excalidraw");
+
+  // 确保目录存在
+  if (!fs.existsSync(excalidrawDir)) {
+    fs.mkdirSync(excalidrawDir, { recursive: true });
+  }
+
+  return excalidrawDir;
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 800,
+    width: 1400,
+    height: 900,
+    minWidth: 1000,
     minHeight: 600,
     title: "Excalidraw",
     icon: path.join(__dirname, "../public/favicon-32x32.png"),
@@ -27,7 +42,7 @@ function createWindow() {
 
   // 开发模式加载本地服务器
   if (isDev) {
-    mainWindow.loadURL("http://localhost:3000");
+    mainWindow.loadURL("http://localhost:3080");
     mainWindow.webContents.openDevTools();
   } else {
     // 生产模式加载构建后的文件
@@ -48,6 +63,161 @@ function createWindow() {
   createMenu();
 }
 
+// IPC: 获取文件列表
+ipcMain.handle("files:list", async () => {
+  try {
+    const filesDir = getFilesDir();
+    const files = fs.readdirSync(filesDir);
+
+    const fileInfos = files
+      .filter((file) => file.endsWith(".excalidraw"))
+      .map((file) => {
+        const filePath = path.join(filesDir, file);
+        const stats = fs.statSync(filePath);
+
+        return {
+          id: file.replace(".excalidraw", ""),
+          name: file.replace(".excalidraw", ""),
+          path: filePath,
+          createdAt: stats.birthtime,
+          modifiedAt: stats.mtime,
+          size: stats.size,
+        };
+      });
+
+    // 不再自动排序，保持文件系统顺序
+    return { success: true, files: fileInfos };
+  } catch (error) {
+    console.error("Error listing files:", error);
+
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC: 获取排序顺序
+ipcMain.handle("files:getOrder", async () => {
+  try {
+    const filesDir = getFilesDir();
+    const orderPath = path.join(filesDir, ".order.json");
+
+    if (!fs.existsSync(orderPath)) {
+      return { success: true, order: [] };
+    }
+
+    const content = fs.readFileSync(orderPath, "utf-8");
+    const order = JSON.parse(content);
+
+    return { success: true, order };
+  } catch (error) {
+    console.error("Error getting file order:", error);
+
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC: 保存排序顺序
+ipcMain.handle("files:saveOrder", async (event, order) => {
+  try {
+    const filesDir = getFilesDir();
+    const orderPath = path.join(filesDir, ".order.json");
+
+    fs.writeFileSync(orderPath, JSON.stringify(order, null, 2), "utf-8");
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error saving file order:", error);
+
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC: 读取文件
+ipcMain.handle("files:read", async (event, fileId) => {
+  try {
+    const filesDir = getFilesDir();
+    const filePath = path.join(filesDir, `${fileId}.excalidraw`);
+
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: "File not found" };
+    }
+
+    const content = fs.readFileSync(filePath, "utf-8");
+    const data = JSON.parse(content);
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("Error reading file:", error);
+
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC: 保存文件
+ipcMain.handle("files:save", async (event, { fileId, name, data }) => {
+  try {
+    const filesDir = getFilesDir();
+    const fileName = name || fileId;
+    const filePath = path.join(filesDir, `${fileName}.excalidraw`);
+
+    const content = JSON.stringify(data, null, 2);
+    fs.writeFileSync(filePath, content, "utf-8");
+
+    return { success: true, path: filePath };
+  } catch (error) {
+    console.error("Error saving file:", error);
+
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC: 删除文件
+ipcMain.handle("files:delete", async (event, fileId) => {
+  try {
+    const filesDir = getFilesDir();
+    const filePath = path.join(filesDir, `${fileId}.excalidraw`);
+
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error deleting file:", error);
+
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC: 重命名文件
+ipcMain.handle("files:rename", async (event, { oldName, newName }) => {
+  try {
+    const filesDir = getFilesDir();
+    const oldPath = path.join(filesDir, `${oldName}.excalidraw`);
+    const newPath = path.join(filesDir, `${newName}.excalidraw`);
+
+    if (fs.existsSync(oldPath)) {
+      fs.renameSync(oldPath, newPath);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error renaming file:", error);
+
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC: 获取文件存储路径
+ipcMain.handle("files:getPath", async () => {
+  return getFilesDir();
+});
+
+// IPC: 打开文件所在目录
+ipcMain.handle("files:openFolder", async () => {
+  const filesDir = getFilesDir();
+  shell.openPath(filesDir);
+});
+
 function createMenu() {
   const template = [
     {
@@ -59,14 +229,22 @@ function createMenu() {
           click: () => mainWindow.webContents.send("menu-new"),
         },
         {
-          label: "打开",
-          accelerator: "CmdOrCtrl+O",
-          click: () => mainWindow.webContents.send("menu-open"),
-        },
-        {
           label: "保存",
           accelerator: "CmdOrCtrl+S",
           click: () => mainWindow.webContents.send("menu-save"),
+        },
+        {
+          label: "另存为",
+          accelerator: "CmdOrCtrl+Shift+S",
+          click: () => mainWindow.webContents.send("menu-save-as"),
+        },
+        { type: "separator" },
+        {
+          label: "打开文件目录",
+          click: () => {
+            const filesDir = getFilesDir();
+            shell.openPath(filesDir);
+          },
         },
         { type: "separator" },
         {
@@ -94,7 +272,9 @@ function createMenu() {
         { role: "reload" },
         { role: "forceReload" },
         { type: "separator" },
-        { role: "resetZoomIn" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
         { role: "zoomIn" },
         { role: "zoomOut" },
         { type: "separator" },

@@ -51,11 +51,11 @@
     "start:production": "yarn build && yarn serve",
     "serve": "npx http-server build -a localhost -p 5001 -o",
     "build:preview": "yarn build && vite preview --port 5000",
-    "electron:dev": "concurrently \"yarn start\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .\"",
-    "electron:build": "yarn build && electron-builder",
-    "electron:build:win": "yarn build && electron-builder --win",
-    "electron:build:mac": "yarn build && electron-builder --mac",
-    "electron:build:linux": "yarn build && electron-builder --linux"
+    "electron:dev": "concurrently \"cross-env VITE_APP_ELECTRON=true VITE_APP_PORT=3080 vite\" \"wait-on http://localhost:3080 && cross-env NODE_ENV=development node ../node_modules/electron/cli.js .\"",
+    "electron:build": "yarn build && node ../node_modules/electron-builder/out/cli/cli.js",
+    "electron:build:win": "yarn build && node ../node_modules/electron-builder/out/cli/cli.js --win",
+    "electron:build:mac": "yarn build && node ../node_modules/electron-builder/out/cli/cli.js --mac",
+    "electron:build:linux": "yarn build && node ../node_modules/electron-builder/out/cli/cli.js --linux"
   },
   "devDependencies": {
     "vite-plugin-sitemap": "0.7.1",
@@ -78,7 +78,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "public/favicon-32x32.png"
@@ -87,7 +89,10 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "icon": "public/favicon-32x32.png",
@@ -97,7 +102,9 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "public/favicon-32x32.png",
