@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "homepage": ".",
+  "main": "electron/main.js",
   "browserslist": {
     "production": [
       ">0.2%",
@@ -49,9 +50,66 @@
     "start": "yarn && vite",
     "start:production": "yarn build && yarn serve",
     "serve": "npx http-server build -a localhost -p 5001 -o",
-    "build:preview": "yarn build && vite preview --port 5000"
+    "build:preview": "yarn build && vite preview --port 5000",
+    "electron:dev": "concurrently \"yarn start\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .\"",
+    "electron:build": "yarn build && electron-builder",
+    "electron:build:win": "yarn build && electron-builder --win",
+    "electron:build:mac": "yarn build && electron-builder --mac",
+    "electron:build:linux": "yarn build && electron-builder --linux"
   },
   "devDependencies": {
-    "vite-plugin-sitemap": "0.7.1"
+    "vite-plugin-sitemap": "0.7.1",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "concurrently": "^9.1.0",
+    "wait-on": "^8.0.0"
+  },
+  "build": {
+    "appId": "com.excalidraw.app",
+    "productName": "Excalidraw",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      "build/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "public/favicon-32x32.png"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "public/favicon-32x32.png",
+      "category": "public.app-category.graphics-design"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "public/favicon-32x32.png",
+      "category": "Graphics"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "public/favicon-32x32.png",
+      "uninstallerIcon": "public/favicon-32x32.png",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }
