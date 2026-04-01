@@ -156,7 +156,7 @@ import {
   filesListAtom,
   fileModifiedAtom,
   fileStore,
-  type LocalFileInfo,
+  type CurrentFile,
 } from "./data/fileStore";
 
 import type { CollabAPI } from "./collab/Collab";
@@ -432,7 +432,7 @@ const ExcalidrawWrapper = () => {
 
   // 处理打开文件
   const handleOpenFile = useCallback(
-    (file: LocalFileInfo, data: unknown) => {
+    (file: CurrentFile, data: unknown) => {
       if (!excalidrawAPI || !data) {
         return;
       }
@@ -507,7 +507,12 @@ const ExcalidrawWrapper = () => {
     }
 
     try {
-      await fileStore.saveFile(currentFile.name, data);
+      await fileStore.saveFile(
+        currentFile.name,
+        data,
+        currentFile.folder,
+        true,
+      );
       setFileModified(false);
       // 刷新文件列表
       const files = await fileStore.loadFiles();
@@ -550,9 +555,11 @@ const ExcalidrawWrapper = () => {
           .then(() => fileStore.loadFiles())
           .then((files) => {
             setFilesList(files);
-            const newFile = files.find((f) => f.name === name);
-            if (newFile) {
-              setCurrentFile(newFile);
+            const newFile = files.find(
+              (f) => f.type === "file" && f.name === name,
+            );
+            if (newFile && newFile.type === "file") {
+              setCurrentFile({ name: newFile.name, folder: newFile.folder });
             }
             setFileModified(false);
           });
