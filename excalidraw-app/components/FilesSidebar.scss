@@ -102,6 +102,7 @@
   transition: background 0.15s;
   border-left: 3px solid transparent;
   user-select: none;
+  position: relative;
 
   &:hover {
     background: var(--color-surface-secondary, #f5f5f5);
@@ -124,14 +125,72 @@
   }
 
   &.dragging {
-    opacity: 0.5;
+    opacity: 0.4;
     background: var(--color-surface-secondary, #f5f5f5);
   }
 
-  &.drag-over {
-    border-top: 2px solid var(--color-primary, #6965db);
-    background: rgba(105, 101, 219, 0.1);
+  // 拖拽到上方 - 显示上方插入线
+  &.drag-over-before::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--color-primary, #6965db);
+    border-radius: 2px;
   }
+
+  // 拖拽到下方 - 显示下方插入线
+  &.drag-over-after::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--color-primary, #6965db);
+    border-radius: 2px;
+  }
+}
+
+// 拖拽到末尾的指示器
+.files-sidebar__drop-end-indicator {
+  padding: 0.5rem 0.75rem;
+  margin: 0.25rem 0.5rem;
+  border: 2px dashed var(--color-primary, #6965db);
+  border-radius: 4px;
+  background: rgba(105, 101, 219, 0.05);
+  color: var(--color-primary, #6965db);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-align: center;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+// 拖拽预览
+.files-sidebar__drag-preview {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-primary, #6965db);
+  color: white;
+  font-size: 0.875rem;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+  z-index: 10000;
 }
 
 .files-sidebar__item-name {

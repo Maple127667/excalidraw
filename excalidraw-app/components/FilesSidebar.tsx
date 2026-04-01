@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
-
+import { useCallback, useEffect, useState, useRef } from "react";
 import { ExcalLogo } from "@excalidraw/excalidraw/components/icons";
 
 import { useAtom, useAtomValue } from "../app-jotai";
-
 import {
   currentFileAtom,
   filesListAtom,
@@ -15,12 +13,12 @@ import {
 
 import "./FilesSidebar.scss";
 
-// 格式化日期
-const formatDate = (date: Date) => {
+const formatDate = (timestamp: number) => {
+  const date = new Date(timestamp);
   const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
+  const days = Math.floor(
+    (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24),
+  );
   if (days === 0) {
     return "今天";
   }
@@ -36,12 +34,9 @@ const formatDate = (date: Date) => {
 interface FilesSidebarProps {
   onOpenFile: (file: LocalFileInfo, data: unknown) => void;
   onNewFile: () => void;
-  getCurrentData: () => {
-    elements: unknown;
-    appState: unknown;
-    files: unknown;
-  } | null;
 }
+
+type DragPosition = "before" | "after" | null;
 
 export const FilesSidebar = ({ onOpenFile, onNewFile }: FilesSidebarProps) => {
   const [files, setFiles] = useAtom(filesListAtom);
@@ -49,114 +44,67 @@ export const FilesSidebar = ({ onOpenFile, onNewFile }: FilesSidebarProps) => {
   const [currentFile, setCurrentFile] = useAtom(currentFileAtom);
   const modified = useAtomValue(fileModifiedAtom);
 
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState("");
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
     file: LocalFileInfo;
   } | null>(null);
-  const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [draggedName, setDraggedName] = useState<string | null>(null);
+  const [dragOverName, setDragOverName] = useState<string | null>(null);
+  const [dragPosition, setDragPosition] = useState<DragPosition>(null);
+  const [dropToEnd, setDropToEnd] = useState(false);
 
-  // 加载文件列表并应用排序
+  const listRef = useRef<HTMLUListElement>(null);
+  const isInitialLoad = useRef(true);
+
   const loadFiles = useCallback(async () => {
     setLoading(true);
     try {
-      const fileList = await fileStore.loadFiles();
-      const order = await fileStore.getFileOrder();
-
-      // 如果有保存的排序，按排序排列
-      if (order.length > 0) {
-        const orderedFiles: LocalFileInfo[] = [];
-        const remainingFiles: LocalFileInfo[] = [];
-
-        // 先按保存的顺序添加
-        for (const id of order) {
-          const file = fileList.find((f) => f.id === id);
-          if (file) {
-            orderedFiles.push(file);
-          }
-        }
-
-        // 添加新文件（不在排序中的）
-        for (const file of fileList) {
-          if (!order.includes(file.id)) {
-            remainingFiles.push(file);
-          }
-        }
-
-        setFiles([...orderedFiles, ...remainingFiles]);
-      } else {
-        setFiles(fileList);
-      }
-    } catch (error) {
-      console.error("Failed to load files:", error);
+      setFiles(await fileStore.loadFiles());
     } finally {
       setLoading(false);
     }
   }, [setFiles, setLoading]);
 
-  // 保存排序
   const saveOrder = useCallback(async (newFiles: LocalFileInfo[]) => {
-    try {
-      const order = newFiles.map((f) => f.id);
-      await fileStore.saveFileOrder(order);
-    } catch (error) {
-      console.error("Failed to save order:", error);
-    }
+    await fileStore.updateOrder(newFiles.map((f) => f.name));
   }, []);
 
   useEffect(() => {
-    if (window.electronAPI) {
+    if (window.electronAPI && isInitialLoad.current) {
+      isInitialLoad.current = false;
       loadFiles();
     }
   }, [loadFiles]);
 
-  // 新建文件
   const handleNewFile = useCallback(async () => {
-    const timestamp = new Date()
+    const name = `画布_${new Date()
       .toISOString()
       .slice(0, 19)
-      .replace(/[:-]/g, "");
-    const name = `画布_${timestamp}`;
-    const id = name;
-
+      .replace(/[:-]/g, "")}`;
     const emptyData = {
       elements: [],
-      appState: {
-        viewBackgroundColor: "#ffffff",
-        gridSize: null,
-      },
+      appState: { viewBackgroundColor: "#ffffff", gridSize: null },
       files: {},
     };
-
     try {
-      await fileStore.saveFile(id, name, emptyData);
+      await fileStore.saveFile(name, emptyData);
       await loadFiles();
-      setCurrentFile({
-        id,
-        name,
-        path: "",
-        createdAt: new Date(),
-        modifiedAt: new Date(),
-        size: 0,
-      });
+      setCurrentFile({ name, modifiedAt: Date.now(), size: 0 });
       onNewFile();
     } catch (error) {
       console.error("Failed to create file:", error);
     }
   }, [loadFiles, setCurrentFile, onNewFile]);
 
-  // 打开文件
   const handleOpenFile = useCallback(
     async (file: LocalFileInfo) => {
       try {
-        const result = await fileStore.readFile(file.id);
-        if (result) {
-          setCurrentFile(file);
-          onOpenFile(file, result);
-        }
+        const data = await fileStore.readFile(file.name);
+        setCurrentFile(file);
+        onOpenFile(file, data);
       } catch (error) {
         console.error("Failed to open file:", error);
       }
@@ -164,18 +112,15 @@ export const FilesSidebar = ({ onOpenFile, onNewFile }: FilesSidebarProps) => {
     [setCurrentFile, onOpenFile],
   );
 
-  // 删除文件
   const handleDeleteFile = useCallback(
     async (file: LocalFileInfo) => {
       if (!confirm(`确定要删除 "${file.name}" 吗？`)) {
         return;
       }
-
       try {
-        await fileStore.deleteFile(file.id);
+        await fileStore.deleteFile(file.name);
         await loadFiles();
-
-        if (currentFile?.id === file.id) {
+        if (currentFile?.name === file.name) {
           setCurrentFile(null);
         }
       } catch (error) {
@@ -185,38 +130,32 @@ export const FilesSidebar = ({ onOpenFile, onNewFile }: FilesSidebarProps) => {
     [currentFile, loadFiles, setCurrentFile],
   );
 
-  // 开始重命名
   const handleStartRename = useCallback((file: LocalFileInfo) => {
-    setEditingId(file.id);
     setEditingName(file.name);
+    setNewName(file.name);
     setContextMenu(null);
   }, []);
 
-  // 完成重命名
   const handleFinishRename = useCallback(
     async (file: LocalFileInfo) => {
-      if (editingName.trim() && editingName !== file.name) {
+      const trimmed = newName.trim();
+      if (trimmed && trimmed !== file.name) {
         try {
-          await fileStore.renameFile(file.name, editingName.trim());
+          await fileStore.renameFile(file.name, trimmed);
           await loadFiles();
-
-          if (currentFile?.id === file.id) {
-            setCurrentFile({
-              ...currentFile,
-              name: editingName.trim(),
-            });
+          if (currentFile?.name === file.name) {
+            setCurrentFile({ ...currentFile, name: trimmed });
           }
         } catch (error) {
           console.error("Failed to rename file:", error);
         }
       }
-      setEditingId(null);
-      setEditingName("");
+      setEditingName(null);
+      setNewName("");
     },
-    [editingName, loadFiles, currentFile, setCurrentFile],
+    [newName, loadFiles, currentFile, setCurrentFile],
   );
 
-  // 右键菜单
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, file: LocalFileInfo) => {
       e.preventDefault();
@@ -225,74 +164,127 @@ export const FilesSidebar = ({ onOpenFile, onNewFile }: FilesSidebarProps) => {
     [],
   );
 
-  // 拖拽开始
   const handleDragStart = useCallback(
     (e: React.DragEvent, file: LocalFileInfo) => {
-      setDraggedId(file.id);
+      setDraggedName(file.name);
       e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", file.id);
+      e.dataTransfer.setData("text/plain", file.name);
     },
     [],
   );
 
-  // 拖拽经过
   const handleDragOver = useCallback(
     (e: React.DragEvent, file: LocalFileInfo) => {
       e.preventDefault();
+      e.stopPropagation();
       e.dataTransfer.dropEffect = "move";
-      setDragOverId(file.id);
+      setDropToEnd(false);
+      const rect = e.currentTarget.getBoundingClientRect();
+      setDragOverName(file.name);
+      setDragPosition(
+        e.clientY < rect.top + rect.height / 2 ? "before" : "after",
+      );
     },
     [],
   );
 
-  // 拖拽离开
-  const handleDragLeave = useCallback(() => {
-    setDragOverId(null);
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (
+      e.clientX < rect.left ||
+      e.clientX >= rect.right ||
+      e.clientY < rect.top ||
+      e.clientY >= rect.bottom
+    ) {
+      setDragOverName(null);
+      setDragPosition(null);
+    }
   }, []);
 
-  // 放下
   const handleDrop = useCallback(
-    (e: React.DragEvent, targetFile: LocalFileInfo) => {
+    (e: React.DragEvent, target: LocalFileInfo) => {
       e.preventDefault();
-      setDragOverId(null);
+      e.stopPropagation();
+      setDragOverName(null);
+      setDragPosition(null);
 
-      if (!draggedId || draggedId === targetFile.id) {
-        setDraggedId(null);
+      if (!draggedName || draggedName === target.name) {
+        setDraggedName(null);
         return;
       }
 
-      // 重新排序
       const newFiles = [...files];
-      const draggedIndex = newFiles.findIndex((f) => f.id === draggedId);
-      const targetIndex = newFiles.findIndex((f) => f.id === targetFile.id);
+      const draggedIdx = newFiles.findIndex((f) => f.name === draggedName);
+      const targetIdx = newFiles.findIndex((f) => f.name === target.name);
 
-      if (draggedIndex !== -1 && targetIndex !== -1) {
-        const [draggedFile] = newFiles.splice(draggedIndex, 1);
-        newFiles.splice(targetIndex, 0, draggedFile);
+      if (draggedIdx !== -1 && targetIdx !== -1) {
+        const [dragged] = newFiles.splice(draggedIdx, 1);
+        const insertIdx = dragPosition === "after" ? targetIdx : targetIdx;
+        newFiles.splice(insertIdx, 0, dragged);
         setFiles(newFiles);
         saveOrder(newFiles);
       }
-
-      setDraggedId(null);
+      setDraggedName(null);
     },
-    [draggedId, files, setFiles, saveOrder],
+    [draggedName, files, setFiles, saveOrder, dragPosition],
   );
 
-  // 拖拽结束
   const handleDragEnd = useCallback(() => {
-    setDraggedId(null);
-    setDragOverId(null);
+    setDraggedName(null);
+    setDragOverName(null);
+    setDragPosition(null);
+    setDropToEnd(false);
   }, []);
 
-  // 点击空白处关闭菜单
+  const handleListDragOver = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      if (!draggedName || !listRef.current) {
+        return;
+      }
+      const items = listRef.current.querySelectorAll(".files-sidebar__item");
+      if (items.length === 0) {
+        return;
+      }
+      const lastRect = items[items.length - 1].getBoundingClientRect();
+      if (e.clientY > lastRect.bottom) {
+        setDragOverName(null);
+        setDragPosition(null);
+        setDropToEnd(true);
+      } else {
+        setDropToEnd(false);
+      }
+      e.dataTransfer.dropEffect = "move";
+    },
+    [draggedName],
+  );
+
+  const handleDropToEnd = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDropToEnd(false);
+      if (!draggedName) {
+        return;
+      }
+      const newFiles = [...files];
+      const idx = newFiles.findIndex((f) => f.name === draggedName);
+      if (idx !== -1) {
+        const [dragged] = newFiles.splice(idx, 1);
+        newFiles.push(dragged);
+        setFiles(newFiles);
+        saveOrder(newFiles);
+      }
+      setDraggedName(null);
+    },
+    [draggedName, files, setFiles, saveOrder],
+  );
+
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
     window.addEventListener("click", handleClick);
-
     return () => window.removeEventListener("click", handleClick);
   }, []);
 
-  // 检测是否在 Electron 中
   if (!window.electronAPI) {
     return null;
   }
@@ -323,7 +315,11 @@ export const FilesSidebar = ({ onOpenFile, onNewFile }: FilesSidebarProps) => {
         </button>
       </div>
 
-      <div className="files-sidebar__content">
+      <div
+        className="files-sidebar__content"
+        onDragOver={handleListDragOver}
+        onDrop={handleDropToEnd}
+      >
         {loading ? (
           <div className="files-sidebar__loading">加载中...</div>
         ) : files.length === 0 ? (
@@ -332,16 +328,22 @@ export const FilesSidebar = ({ onOpenFile, onNewFile }: FilesSidebarProps) => {
             <button onClick={handleNewFile}>创建第一个画布</button>
           </div>
         ) : (
-          <ul className="files-sidebar__list">
+          <ul className="files-sidebar__list" ref={listRef}>
             {files.map((file) => (
               <li
-                key={file.id}
+                key={file.name}
                 className={`files-sidebar__item ${
-                  currentFile?.id === file.id ? "active" : ""
+                  currentFile?.name === file.name ? "active" : ""
                 } ${
-                  modified && currentFile?.id === file.id ? "modified" : ""
-                } ${dragOverId === file.id ? "drag-over" : ""} ${
-                  draggedId === file.id ? "dragging" : ""
+                  modified && currentFile?.name === file.name ? "modified" : ""
+                } ${draggedName === file.name ? "dragging" : ""} ${
+                  dragOverName === file.name && dragPosition === "before"
+                    ? "drag-over-before"
+                    : ""
+                } ${
+                  dragOverName === file.name && dragPosition === "after"
+                    ? "drag-over-after"
+                    : ""
                 }`}
                 onClick={() => handleOpenFile(file)}
                 onContextMenu={(e) => handleContextMenu(e, file)}
@@ -352,19 +354,19 @@ export const FilesSidebar = ({ onOpenFile, onNewFile }: FilesSidebarProps) => {
                 onDrop={(e) => handleDrop(e, file)}
                 onDragEnd={handleDragEnd}
               >
-                {editingId === file.id ? (
+                {editingName === file.name ? (
                   <input
                     type="text"
                     className="files-sidebar__rename-input"
-                    value={editingName}
-                    onChange={(e) => setEditingName(e.target.value)}
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
                     onBlur={() => handleFinishRename(file)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         handleFinishRename(file);
                       } else if (e.key === "Escape") {
-                        setEditingId(null);
-                        setEditingName("");
+                        setEditingName(null);
+                        setNewName("");
                       }
                     }}
                     autoFocus
@@ -374,18 +376,23 @@ export const FilesSidebar = ({ onOpenFile, onNewFile }: FilesSidebarProps) => {
                   <>
                     <span className="files-sidebar__item-name">
                       {file.name}
-                      {modified && currentFile?.id === file.id && (
+                      {modified && currentFile?.name === file.name && (
                         <span className="files-sidebar__modified-dot">●</span>
                       )}
                     </span>
                     <span className="files-sidebar__item-date">
-                      {formatDate(new Date(file.modifiedAt))}
+                      {formatDate(file.modifiedAt)}
                     </span>
                   </>
                 )}
               </li>
             ))}
           </ul>
+        )}
+        {dropToEnd && (
+          <div className="files-sidebar__drop-end-indicator">
+            放置到此处（末尾）
+          </div>
         )}
       </div>
 
@@ -408,7 +415,6 @@ export const FilesSidebar = ({ onOpenFile, onNewFile }: FilesSidebarProps) => {
         </button>
       </div>
 
-      {/* 右键菜单 */}
       {contextMenu && (
         <div
           className="files-sidebar__context-menu"

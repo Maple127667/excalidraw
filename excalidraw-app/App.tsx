@@ -507,7 +507,7 @@ const ExcalidrawWrapper = () => {
     }
 
     try {
-      await fileStore.saveFile(currentFile.id, currentFile.name, data);
+      await fileStore.saveFile(currentFile.name, data);
       setFileModified(false);
       // 刷新文件列表
       const files = await fileStore.loadFiles();
@@ -545,14 +545,12 @@ const ExcalidrawWrapper = () => {
           return;
         }
 
-        const id =
-          Date.now().toString(36) + Math.random().toString(36).substr(2);
         fileStore
-          .saveFile(id, name, data)
+          .saveFile(name, data)
           .then(() => fileStore.loadFiles())
           .then((files) => {
             setFilesList(files);
-            const newFile = files.find((f) => f.id === id);
+            const newFile = files.find((f) => f.name === name);
             if (newFile) {
               setCurrentFile(newFile);
             }
@@ -1102,11 +1100,7 @@ const ExcalidrawWrapper = () => {
     >
       {/* 左侧文件侧边栏 - 仅在 Electron 中显示 */}
       {window.electronAPI && (
-        <FilesSidebar
-          onOpenFile={handleOpenFile}
-          onNewFile={handleNewFile}
-          getCurrentData={getCurrentData}
-        />
+        <FilesSidebar onOpenFile={handleOpenFile} onNewFile={handleNewFile} />
       )}
       <div style={{ flex: 1, height: "100%" }}>
         <Excalidraw

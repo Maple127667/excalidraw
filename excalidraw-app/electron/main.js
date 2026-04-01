@@ -1,25 +1,93 @@
 const path = require("path");
-
 const fs = require("fs");
 
 const { app, BrowserWindow, shell, Menu, ipcMain } = require("electron");
 
-// 开发环境检测
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
-
 let mainWindow;
 
-// 获取用户文档目录下的 Excalidraw 文件夹
+// 获取文件存储目录
 function getFilesDir() {
   const documentsPath = app.getPath("documents");
   const excalidrawDir = path.join(documentsPath, "Excalidraw");
-
-  // 确保目录存在
   if (!fs.existsSync(excalidrawDir)) {
     fs.mkdirSync(excalidrawDir, { recursive: true });
   }
-
   return excalidrawDir;
+}
+
+// 获取排序文件路径
+function getOrderFilePath() {
+  return path.join(getFilesDir(), ".order.json");
+}
+
+// 读取排序
+function readOrder() {
+  try {
+    const filePath = getOrderFilePath();
+    if (!fs.existsSync(filePath)) {
+      return [];
+    }
+    return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+  } catch {
+    return [];
+  }
+}
+
+// 写入排序
+function writeOrder(order) {
+  try {
+    fs.writeFileSync(getOrderFilePath(), JSON.stringify(order, null, 2));
+  } catch (error) {
+    console.error("Error writing order:", error);
+  }
+}
+
+// 获取文件列表（物理文件 + 排序）
+function getFileList() {
+  const filesDir = getFilesDir();
+  const physicalFiles = fs
+    .readdirSync(filesDir)
+    .filter((f) => f.endsWith(".excalidraw"))
+    .map((f) => f.replace(".excalidraw", ""));
+
+  const order = readOrder();
+  const orderedFiles = [];
+  const remainingFiles = [];
+
+  // 按排序顺序排列
+  for (const name of order) {
+    if (physicalFiles.includes(name)) {
+      const filePath = path.join(filesDir, `${name}.excalidraw`);
+      const stats = fs.statSync(filePath);
+      orderedFiles.push({
+        name,
+        modifiedAt: stats.mtimeMs,
+        size: stats.size,
+      });
+    }
+  }
+
+  // 新文件追加到末尾
+  for (const name of physicalFiles) {
+    if (!order.includes(name)) {
+      const filePath = path.join(filesDir, `${name}.excalidraw`);
+      const stats = fs.statSync(filePath);
+      remainingFiles.push({
+        name,
+        modifiedAt: stats.mtimeMs,
+        size: stats.size,
+      });
+    }
+  }
+
+  // 如果有新文件，更新排序文件
+  if (remainingFiles.length > 0) {
+    const newOrder = [...orderedFiles, ...remainingFiles].map((f) => f.name);
+    writeOrder(newOrder);
+  }
+
+  return [...orderedFiles, ...remainingFiles];
 }
 
 function createWindow() {
@@ -34,162 +102,88 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
       contextIsolation: true,
-      enableRemoteModule: false,
     },
-    // 禁用默认菜单栏
     autoHideMenuBar: true,
   });
 
-  // 开发模式加载本地服务器
   if (isDev) {
     mainWindow.loadURL("http://localhost:3080");
     mainWindow.webContents.openDevTools();
   } else {
-    // 生产模式加载构建后的文件
     mainWindow.loadFile(path.join(__dirname, "../build/index.html"));
   }
 
-  // 处理外部链接
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };
   });
 
-  mainWindow.on("closed", () => {
-    mainWindow = null;
-  });
-
-  // 创建菜单
+  mainWindow.on("closed", () => (mainWindow = null));
   createMenu();
 }
 
 // IPC: 获取文件列表
-ipcMain.handle("files:list", async () => {
-  try {
-    const filesDir = getFilesDir();
-    const files = fs.readdirSync(filesDir);
+ipcMain.handle("files:list", () => ({ success: true, files: getFileList() }));
 
-    const fileInfos = files
-      .filter((file) => file.endsWith(".excalidraw"))
-      .map((file) => {
-        const filePath = path.join(filesDir, file);
-        const stats = fs.statSync(filePath);
-
-        return {
-          id: file.replace(".excalidraw", ""),
-          name: file.replace(".excalidraw", ""),
-          path: filePath,
-          createdAt: stats.birthtime,
-          modifiedAt: stats.mtime,
-          size: stats.size,
-        };
-      });
-
-    // 不再自动排序，保持文件系统顺序
-    return { success: true, files: fileInfos };
-  } catch (error) {
-    console.error("Error listing files:", error);
-
-    return { success: false, error: error.message };
-  }
-});
-
-// IPC: 获取排序顺序
-ipcMain.handle("files:getOrder", async () => {
-  try {
-    const filesDir = getFilesDir();
-    const orderPath = path.join(filesDir, ".order.json");
-
-    if (!fs.existsSync(orderPath)) {
-      return { success: true, order: [] };
-    }
-
-    const content = fs.readFileSync(orderPath, "utf-8");
-    const order = JSON.parse(content);
-
-    return { success: true, order };
-  } catch (error) {
-    console.error("Error getting file order:", error);
-
-    return { success: false, error: error.message };
-  }
-});
-
-// IPC: 保存排序顺序
-ipcMain.handle("files:saveOrder", async (event, order) => {
-  try {
-    const filesDir = getFilesDir();
-    const orderPath = path.join(filesDir, ".order.json");
-
-    fs.writeFileSync(orderPath, JSON.stringify(order, null, 2), "utf-8");
-
-    return { success: true };
-  } catch (error) {
-    console.error("Error saving file order:", error);
-
-    return { success: false, error: error.message };
-  }
+// IPC: 更新排序
+ipcMain.handle("files:updateOrder", (event, order) => {
+  writeOrder(order);
+  return { success: true };
 });
 
 // IPC: 读取文件
-ipcMain.handle("files:read", async (event, fileId) => {
+ipcMain.handle("files:read", (event, name) => {
   try {
-    const filesDir = getFilesDir();
-    const filePath = path.join(filesDir, `${fileId}.excalidraw`);
-
+    const filePath = path.join(getFilesDir(), `${name}.excalidraw`);
     if (!fs.existsSync(filePath)) {
       return { success: false, error: "File not found" };
     }
-
-    const content = fs.readFileSync(filePath, "utf-8");
-    const data = JSON.parse(content);
-
+    const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
     return { success: true, data };
   } catch (error) {
-    console.error("Error reading file:", error);
-
     return { success: false, error: error.message };
   }
 });
 
 // IPC: 保存文件
-ipcMain.handle("files:save", async (event, { fileId, name, data }) => {
+ipcMain.handle("files:save", (event, { name, data }) => {
   try {
-    const filesDir = getFilesDir();
-    const fileName = name || fileId;
-    const filePath = path.join(filesDir, `${fileName}.excalidraw`);
+    const filePath = path.join(getFilesDir(), `${name}.excalidraw`);
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 
-    const content = JSON.stringify(data, null, 2);
-    fs.writeFileSync(filePath, content, "utf-8");
+    // 如果是新文件，添加到排序末尾
+    const order = readOrder();
+    if (!order.includes(name)) {
+      order.push(name);
+      writeOrder(order);
+    }
 
-    return { success: true, path: filePath };
+    return { success: true };
   } catch (error) {
-    console.error("Error saving file:", error);
-
     return { success: false, error: error.message };
   }
 });
 
 // IPC: 删除文件
-ipcMain.handle("files:delete", async (event, fileId) => {
+ipcMain.handle("files:delete", (event, name) => {
   try {
-    const filesDir = getFilesDir();
-    const filePath = path.join(filesDir, `${fileId}.excalidraw`);
-
+    const filePath = path.join(getFilesDir(), `${name}.excalidraw`);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
 
+    // 从排序中移除
+    const order = readOrder();
+    writeOrder(order.filter((n) => n !== name));
+
     return { success: true };
   } catch (error) {
-    console.error("Error deleting file:", error);
-
     return { success: false, error: error.message };
   }
 });
 
 // IPC: 重命名文件
-ipcMain.handle("files:rename", async (event, { oldName, newName }) => {
+ipcMain.handle("files:rename", (event, { oldName, newName }) => {
   try {
     const filesDir = getFilesDir();
     const oldPath = path.join(filesDir, `${oldName}.excalidraw`);
@@ -199,24 +193,25 @@ ipcMain.handle("files:rename", async (event, { oldName, newName }) => {
       fs.renameSync(oldPath, newPath);
     }
 
+    // 更新排序
+    const order = readOrder();
+    const idx = order.indexOf(oldName);
+    if (idx !== -1) {
+      order[idx] = newName;
+      writeOrder(order);
+    }
+
     return { success: true };
   } catch (error) {
-    console.error("Error renaming file:", error);
-
     return { success: false, error: error.message };
   }
 });
 
-// IPC: 获取文件存储路径
-ipcMain.handle("files:getPath", async () => {
-  return getFilesDir();
-});
+// IPC: 获取文件路径
+ipcMain.handle("files:getPath", () => getFilesDir());
 
-// IPC: 打开文件所在目录
-ipcMain.handle("files:openFolder", async () => {
-  const filesDir = getFilesDir();
-  shell.openPath(filesDir);
-});
+// IPC: 打开文件夹
+ipcMain.handle("files:openFolder", () => shell.openPath(getFilesDir()));
 
 function createMenu() {
   const template = [
@@ -233,19 +228,8 @@ function createMenu() {
           accelerator: "CmdOrCtrl+S",
           click: () => mainWindow.webContents.send("menu-save"),
         },
-        {
-          label: "另存为",
-          accelerator: "CmdOrCtrl+Shift+S",
-          click: () => mainWindow.webContents.send("menu-save-as"),
-        },
         { type: "separator" },
-        {
-          label: "打开文件目录",
-          click: () => {
-            const filesDir = getFilesDir();
-            shell.openPath(filesDir);
-          },
-        },
+        { label: "打开文件目录", click: () => shell.openPath(getFilesDir()) },
         { type: "separator" },
         {
           label: "退出",
@@ -256,30 +240,20 @@ function createMenu() {
     },
     {
       label: "编辑",
-      submenu: [
-        { role: "undo" },
-        { role: "redo" },
-        { type: "separator" },
-        { role: "cut" },
-        { role: "copy" },
-        { role: "paste" },
-        { role: "selectAll" },
-      ],
+      submenu: ["undo", "redo", "cut", "copy", "paste", "selectAll"].map(
+        (r) => ({ role: r }),
+      ),
     },
     {
       label: "视图",
       submenu: [
-        { role: "reload" },
-        { role: "forceReload" },
-        { type: "separator" },
-        { role: "toggleDevTools" },
-        { type: "separator" },
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
-        { type: "separator" },
-        { role: "togglefullscreen" },
-      ],
+        "reload",
+        "toggleDevTools",
+        "resetZoom",
+        "zoomIn",
+        "zoomOut",
+        "togglefullscreen",
+      ].map((r) => ({ role: r })),
     },
     {
       label: "帮助",
@@ -288,58 +262,23 @@ function createMenu() {
           label: "访问官网",
           click: () => shell.openExternal("https://excalidraw.com"),
         },
-        {
-          label: "文档",
-          click: () => shell.openExternal("https://docs.excalidraw.com"),
-        },
       ],
     },
   ];
 
-  // macOS 特殊菜单
   if (process.platform === "darwin") {
     template.unshift({
       label: app.getName(),
-      submenu: [
-        { role: "about" },
-        { type: "separator" },
-        { role: "services" },
-        { type: "separator" },
-        { role: "hide" },
-        { role: "hideOthers" },
-        { role: "unhide" },
-        { type: "separator" },
-        { role: "quit" },
-      ],
+      submenu: [{ role: "about" }, { role: "quit" }],
     });
   }
 
-  const menu = Menu.buildFromTemplate(template);
-  Menu.setApplicationMenu(menu);
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-// 应用准备就绪
 app.whenReady().then(createWindow);
-
-// 所有窗口关闭时退出（macOS除外）
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
-});
-
-// macOS 激活应用
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
-});
-
-// 处理未捕获的异常
-process.on("uncaughtException", (error) => {
-  console.error("Uncaught Exception:", error);
-});
-
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("Unhandled Rejection at:", promise, "reason:", reason);
-});
+app.on("window-all-closed", () => process.platform !== "darwin" && app.quit());
+app.on(
+  "activate",
+  () => BrowserWindow.getAllWindows().length === 0 && createWindow(),
+);
